@@ -547,10 +547,12 @@ const M={
 /* ============================================================
    §5 灯光（随昼夜/季节插值）
 ============================================================ */
+/* 阳光/月光统一行进方向：从窗外上方射入（窗户入射光与世界光同轴） */
+const TRAVEL=new THREE.Vector3(.27,.53,-.8).normalize();
 const hemi=new THREE.HemisphereLight('#cfe8ff','#7fa05a',.75);
 roomGroup.add(hemi);
 const sun=new THREE.DirectionalLight('#fff1cf',1.15);
-sun.position.set(11,7,13);
+sun.position.set(3,2.5,0).addScaledVector(TRAVEL,-19);
 sun.castShadow=true;
 sun.shadow.mapSize.set(2048,2048);
 sun.shadow.camera.left=-14;sun.shadow.camera.right=14;
@@ -559,15 +561,15 @@ sun.shadow.camera.near=1;sun.shadow.camera.far=45;
 sun.shadow.bias=-.0005;sun.shadow.normalBias=.05;
 sun.target.position.set(3,2.5,0);
 roomGroup.add(sun,sun.target);
-/* 窗光：聚光灯从窗外射入，穿过窗口在地板投下光斑 */
+/* 窗光：聚光灯从窗外沿同一方向射入，穿过窗口在地板投下光斑 */
 const beam=new THREE.SpotLight('#ffe8b0',0);
-beam.position.set(4,-2.6,4.0);
-beam.angle=.42;beam.penumbra=.35;beam.distance=0;
+beam.position.set(4,0,1.85).addScaledVector(TRAVEL,-4);
+beam.angle=.38;beam.penumbra=.45;beam.distance=0;
 beam.castShadow=true;
 beam.shadow.mapSize.set(1024,1024);
 beam.shadow.camera.near=.5;beam.shadow.camera.far=14;
 beam.shadow.bias=-.0004;
-beam.target.position.set(4,3.4,0);
+beam.target.position.set(4,0,1.85).addScaledVector(TRAVEL,5);
 roomGroup.add(beam,beam.target);
 /* 夜晚室内暖光 */
 const fillLight=new THREE.PointLight('#ffb478',.12,9,2);
@@ -625,7 +627,9 @@ B(1.76,.12,.1,M.frame,4,0,2.56);
 B(.05,.07,1.3,M.frame,4,0,1.85);
 B(1.6,.07,.05,M.frame,4,0,1.85);
 B(1.94,.32,.07,M.frame,4,.01,1.16); /* 窗台板 */
-const glass=new THREE.Mesh(new THREE.PlaneGeometry(1.6,1.3),M.glass);
+const glassGeo=new THREE.PlaneGeometry(1.6,1.3);
+glassGeo.rotateX(-Math.PI/2); /* 玻璃竖直，嵌在 y=0 墙面内 */
+const glass=new THREE.Mesh(glassGeo,M.glass);
 glass.position.set(4,.004,1.85);roomGroup.add(glass);
 /* 窗台外花箱 */
 B(1.5,.24,.22,M.woodDark,4,-.3,1.32);
@@ -666,8 +670,8 @@ function curtainPanel(){
   return m;
 }
 const curtL=curtainPanel(),curtR=curtainPanel();
-curtL.position.set(3.62,.02,1.705);
-curtR.position.set(4.38,.02,1.705);
+curtL.position.set(3.62,.1,1.715);
+curtR.position.set(4.38,.1,1.715);
 curtainGroup.add(curtL,curtR);
 const curtHit=new THREE.Mesh(new THREE.BoxGeometry(2.2,.7,2.0),M.invisible);
 curtHit.position.set(4,.28,1.7);curtainGroup.add(curtHit);
@@ -684,23 +688,18 @@ function setCurtain(v,instant){
 }
 placeCurtain(0);
 
-/* 光柱体积（窗帘拉开时可见）+ 光柱尘埃 */
+/* 光片（窗帘拉开时可见）：沿统一光向的单一斜面，无重叠面、底边悬于地板上方 2cm 防闪烁 */
 const shaftMat=new THREE.MeshBasicMaterial({color:'#ffe8b0',transparent:true,opacity:0,
   blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
 {
-  /* 窗口矩形 (x 3.25~4.75, z 1.25~2.45, y=.02) 沿光向 (0,.84,-.54) 投到地面 */
-  const x0=3.25,x1=4.75,z0=1.25,z1=2.45;
-  const yAt=z=>.02+.84/.54*z;
-  const v=[
-    x0,.02,z1, x1,.02,z1, x1,.02,z0, x0,.02,z0,   /* 近端（窗口） */
-    x0,yAt(z0),0, x1,yAt(z0),0, x1,yAt(z1),0, x0,yAt(z1),0 /* 远端（地面） */
-  ];
-  const idx=[0,1,2,0,2,3, 4,5,6,4,6,7, 0,4,7,0,7,3, 1,5,6,1,6,2, 0,1,5,0,5,4, 3,2,6,3,6,7];
-  const g=new THREE.BufferGeometry();
-  g.setAttribute('position',new THREE.Float32BufferAttribute(v,3));
-  g.setIndex(idx);
-  const shaft=new THREE.Mesh(g,shaftMat);
-  shaft.renderOrder=5;roomGroup.add(shaft);
+  const A=new THREE.Vector3(4,.02,2.42);           /* 窗口上沿 */
+  const tF=(A.z-.02)/-TRAVEL.z;                    /* 沿光向到地面的距离 */
+  const g=new THREE.PlaneGeometry(1.5,tF);
+  g.translate(0,-tF/2,0);                          /* 顶边对齐原点，向下延伸 */
+  g.rotateX(Math.atan2(-TRAVEL.z,-TRAVEL.y));      /* 延伸方向对齐光方向 */
+  const sheet=new THREE.Mesh(g,shaftMat);
+  sheet.position.copy(A);
+  sheet.renderOrder=5;roomGroup.add(sheet);
 }
 const dust=(()=>{
   const n=42,pos=new Float32Array(n*3),seed=[];
@@ -727,19 +726,19 @@ B(.46,.6,.12,M.pillow,.42,1.32,.6);
 cylZ(.95,.95,.022,28,M.carpetA,3,2.5,.012).castShadow=false;
 cylZ(.58,.58,.024,28,M.carpetB,3,2.5,.013).castShadow=false;
 
-/* 桌子：贴靠 yoz 墙(x=0)，桌面高 1.45 */
-B(.95,2.1,.07,M.woodLight,.5,3.55,1.415);
+/* 桌子：贴靠 yoz 墙(x=0)，桌面高约等于椅背(1.10) */
+B(.95,2.1,.07,M.woodLight,.5,3.55,1.065);
 [[-.4,-.95],[-.4,.95],[.4,-.95],[.4,.95]].forEach(([dx,dy])=>{
-  B(.07,.07,1.38,M.woodDark,.5+dx,3.55+dy,.69);
+  B(.07,.07,1.03,M.woodDark,.5+dx,3.55+dy,.515);
 });
 
 /* 桌上小书架 */
 {
-  const S1=1.475,S2=1.815,S3=2.155; /* 三层板 */
+  const S1=1.125,S2=1.465,S3=1.805; /* 三层板 */
   [S1,S2,S3].forEach(z=>B(.3,.6,.04,M.woodMid,.3,4.18,z));
-  B(.3,.04,.72,M.woodMid,.3,3.88,1.815);  /* 侧板 */
-  B(.3,.04,.72,M.woodMid,.3,4.48,1.815);
-  B(.02,.6,.72,M.woodMid,.16,4.18,1.815); /* 背板 */
+  B(.3,.04,.72,M.woodMid,.3,3.88,1.465);  /* 侧板 */
+  B(.3,.04,.72,M.woodMid,.3,4.48,1.465);
+  B(.02,.6,.72,M.woodMid,.16,4.18,1.465); /* 背板 */
   const bc=['#c05a4a','#4a7ac0','#5aa05a','#d0a040','#8a5a8a','#c98a3a'];
   let y=3.95;
   for(let i=0;i<5;i++){ /* 下层书 */
@@ -756,17 +755,17 @@ B(.95,2.1,.07,M.woodLight,.5,3.55,1.415);
 }
 
 /* 笔筒（内有常驻笔） */
-cylZ(.09,.075,.22,10,M.woodDark,.32,3.62,1.56);
+cylZ(.09,.075,.22,10,M.woodDark,.32,3.62,1.21);
 [[.5,'#e07b39'],[-.4,'#4a7ac0'],[1.2,'#5aa05a']].forEach(([tilt,c])=>{
   const p=new THREE.Mesh(new THREE.CylinderGeometry(.014,.014,.3,6),new THREE.MeshStandardMaterial({color:c,roughness:.5}));
-  p.position.set(.32+rand(-.03,.03),3.62+rand(-.03,.03),1.68);
+  p.position.set(.32+rand(-.03,.03),3.62+rand(-.03,.03),1.33);
   p.rotation.set(.28*Math.cos(tilt*3),0,.28*Math.sin(tilt*3));
   p.castShadow=true;roomGroup.add(p);
 });
 
 /* 打开的书本（可点击收回书架）：书脊沿 y 轴，页面向 ±x 展开 */
 const bookGroup=new THREE.Group();bookGroup.userData.interactive='book';
-bookGroup.position.set(.52,2.95,1.462);
+bookGroup.position.set(.52,2.95,1.112);
 bookGroup.rotation.z=.35; /* 桌面上摆的角度 */
 roomGroup.add(bookGroup);
 const bookCover=new THREE.Mesh(new THREE.BoxGeometry(.47,.33,.014),M.cover);
@@ -779,7 +778,7 @@ const pgL=new THREE.Mesh(pageGeo,M.pages);pgL.position.set(-.105,0,.003);pgL.rec
 const pgR=new THREE.Mesh(pageGeo,M.pages);pgR.position.set(.105,0,.003);pgR.receiveShadow=true;pageR.add(pgR);
 pageL.rotation.y=.26;pageR.rotation.y=-.26;
 
-/* 散落的笔（可点击收回笔筒） */
+/* 散落的笔（可点击收回笔筒）：水平放在桌面上，收回后立进笔筒 */
 const pens=[];
 {
   const mats=[M.pen1,M.pen2,M.pen3,M.pen4];
@@ -790,18 +789,20 @@ const pens=[];
     const tip=new THREE.Mesh(new THREE.ConeGeometry(.014,.05,6),new THREE.MeshStandardMaterial({color:'#e8d9b0',roughness:.4}));
     tip.geometry.rotateZ(Math.PI/2); /* 笔尖朝 -x */
     tip.position.set(-.125,0,0);g.add(tip);
+    g.userData.interactive='pen';
     roomGroup.add(g);pens.push(g);
   }
 }
 const PEN_SLOTS=[
-  {x:.75,y:3.28,z:1.466},{x:.24,y:2.66,z:1.466},{x:.55,y:3.95,z:1.466},{x:1.95,y:2.42,z:.016}
+  {x:.78,y:3.30},{x:.28,y:2.68},{x:.55,y:3.98},{x:.80,y:2.72}
 ];
+const PEN_TABLE_Z=1.116;
 function scatterPens(){
   pens.forEach((p,i)=>{
     const s=PEN_SLOTS[i];
     p.visible=true;p.scale.setScalar(1);
-    p.position.set(s.x+rand(-.05,.05),s.y+rand(-.05,.05),s.z);
-    p.rotation.set(0,rand(0,Math.PI*2),0);
+    p.position.set(s.x+rand(-.04,.04),s.y+rand(-.04,.04),PEN_TABLE_Z);
+    p.rotation.set(0,rand(0,Math.PI*2),0); /* 水平平放 */
     p.userData.stored=false;
   });
 }
@@ -821,8 +822,9 @@ roomGroup.add(chairGroup);
   B(.42,.04,.07,M.woodMid,0,-.19,1.0,chairGroup);
   B(.42,.04,.14,M.woodMid,0,-.19,1.14,chairGroup);
 }
-const CHAIR_AKEW={px:1.62,py:3.35,pz:-.02,rx:.12,ry:.15,rz:2.0};
-const CHAIR_STRAIGHT={px:1.35,py:2.9,pz:0,rx:0,ry:0,rz:1.2};
+/* 歪：只绕竖直轴转过一个角度（不倾斜、不沉地）；扶正：转正对桌面 */
+const CHAIR_AKEW={px:1.58,py:3.4,pz:0,rx:0,ry:0,rz:2.45};
+const CHAIR_STRAIGHT={px:1.3,py:3.3,pz:0,rx:0,ry:0,rz:Math.PI/2};
 function setChair(p,instant){
   killTweens('chair');
   if(instant){
@@ -905,16 +907,18 @@ function makeTree(x,y,scale,small){
   trunk.position.set(x,y,trunkH/2-.12);trunk.castShadow=true;envGroup.add(trunk);
   const top=trunkH-.1;
   if(!small){
-    [[.5,1.1],[1.9,.9],[2.9,.8]].forEach(([a,len0])=>{
+    /* 树枝：以四元数从竖直旋向目标方向，枝基贴树干顶，末端挂积雪帽 */
+    [[.9,.95],[2.4,.8],[4.0,.7]].forEach(([az,len0])=>{
       const len=len0*scale;
       const br=new THREE.Mesh(new THREE.CylinderGeometry(.05*scale,.09*scale,len,5),M.trunk);
       br.geometry.rotateX(Math.PI/2);
-      br.position.set(x+Math.sin(a)*len*.45,y+Math.cos(a)*len*.45,top+.15+len*.3);
-      br.rotation.z=-.65;br.rotation.x=a;
+      br.quaternion.setFromEuler(new THREE.Euler(0,az,-.85,'ZYX'));
+      const dir=new THREE.Vector3(0,0,1).applyQuaternion(br.quaternion);
+      br.position.set(x,y,top).addScaledVector(dir,len*.5);
       br.castShadow=true;envGroup.add(br);
       const cap=new THREE.Mesh(new THREE.IcosahedronGeometry(.17,0),M.snow.clone());
       cap.material.transparent=true;cap.material.opacity=0;
-      cap.position.set(x+Math.sin(a)*len*.85,y+Math.cos(a)*len*.85,top+.2+len*.58);
+      cap.position.set(x,y,top).addScaledVector(dir,len*.92);
       envGroup.add(cap);snowCaps.push(cap);
     });
   }
@@ -1067,43 +1071,43 @@ const SEASON_VIS={
 const LIGHT={
   summer:{
     day:{sky:C('#7ec4ea'),hemiSky:C('#cfe8ff'),hemiGnd:C('#7fa05a'),hemiInt:.75,
-      sun:C('#fff1cf'),sunInt:1.15,sunPos:new THREE.Vector3(11,7,13),
-      beam:C('#ffe8b0'),beamInt:1.5,fill:C('#ffe9c8'),fillInt:.12,
-      stars:0,ff:0,shaft:.1},
+      sun:C('#fff1cf'),sunInt:1.15,sunPos:new THREE.Vector3(3,2.5,0).addScaledVector(TRAVEL,-19),
+      beam:C('#ffe8b0'),beamInt:.82,fill:C('#ffe9c8'),fillInt:.12,
+      stars:0,ff:0,shaft:.07},
     night:{sky:C('#0e1c3d'),hemiSky:C('#2c3e6b'),hemiGnd:C('#1a2337'),hemiInt:.5,
-      sun:C('#a9c4ff'),sunInt:.5,sunPos:new THREE.Vector3(9,4,11),
-      beam:C('#b7ccff'),beamInt:1.25,fill:C('#ffb478'),fillInt:.42,
-      stars:1,ff:1,shaft:.16},
+      sun:C('#a9c4ff'),sunInt:.5,sunPos:new THREE.Vector3(3,2.5,0).addScaledVector(TRAVEL,-16),
+      beam:C('#b7ccff'),beamInt:.62,fill:C('#ffb478'),fillInt:.42,
+      stars:1,ff:1,shaft:.11},
   },
   autumn:{
     day:{sky:C('#e9c795'),hemiSky:C('#ffe3b8'),hemiGnd:C('#9a7b4a'),hemiInt:.7,
-      sun:C('#ffc98a'),sunInt:1.1,sunPos:new THREE.Vector3(12,6,10),
-      beam:C('#ffcf96'),beamInt:1.4,fill:C('#ffe2b8'),fillInt:.12,
-      stars:0,ff:0,shaft:.11},
+      sun:C('#ffc98a'),sunInt:1.1,sunPos:new THREE.Vector3(3,2.5,0).addScaledVector(TRAVEL,-19),
+      beam:C('#ffcf96'),beamInt:.78,fill:C('#ffe2b8'),fillInt:.12,
+      stars:0,ff:0,shaft:.07},
     night:{sky:C('#221a38'),hemiSky:C('#3a2f57'),hemiGnd:C('#201831'),hemiInt:.5,
-      sun:C('#cbb7ff'),sunInt:.5,sunPos:new THREE.Vector3(9,4,11),
-      beam:C('#cdbaff'),beamInt:1.1,fill:C('#ff9e5e'),fillInt:.4,
-      stars:1,ff:.6,shaft:.17},
+      sun:C('#cbb7ff'),sunInt:.5,sunPos:new THREE.Vector3(3,2.5,0).addScaledVector(TRAVEL,-16),
+      beam:C('#cdbaff'),beamInt:.58,fill:C('#ff9e5e'),fillInt:.4,
+      stars:1,ff:.6,shaft:.115},
   },
   winter:{
     day:{sky:C('#d3e6f2'),hemiSky:C('#eef6ff'),hemiGnd:C('#b9c8d6'),hemiInt:.8,
-      sun:C('#f0f8ff'),sunInt:1.05,sunPos:new THREE.Vector3(10,8,12),
-      beam:C('#e8f4ff'),beamInt:1.3,fill:C('#dceaf5'),fillInt:.15,
-      stars:0,ff:0,shaft:.1},
+      sun:C('#f0f8ff'),sunInt:1.05,sunPos:new THREE.Vector3(3,2.5,0).addScaledVector(TRAVEL,-19),
+      beam:C('#e8f4ff'),beamInt:.72,fill:C('#dceaf5'),fillInt:.15,
+      stars:0,ff:0,shaft:.07},
     night:{sky:C('#0b1626'),hemiSky:C('#1e2c44'),hemiGnd:C('#0e1520'),hemiInt:.55,
-      sun:C('#b9d4f2'),sunInt:.62,sunPos:new THREE.Vector3(9,4,11),
-      beam:C('#cfe6ff'),beamInt:1.3,fill:C('#ffb478'),fillInt:.45,
-      stars:1,ff:0,shaft:.18},
+      sun:C('#b9d4f2'),sunInt:.62,sunPos:new THREE.Vector3(3,2.5,0).addScaledVector(TRAVEL,-16),
+      beam:C('#cfe6ff'),beamInt:.66,fill:C('#ffb478'),fillInt:.45,
+      stars:1,ff:0,shaft:.12},
   },
   spring:{
     day:{sky:C('#a3d8ee'),hemiSky:C('#e2f4ff'),hemiGnd:C('#8fbf72'),hemiInt:.8,
-      sun:C('#fff3d9'),sunInt:1.2,sunPos:new THREE.Vector3(11,7,13),
-      beam:C('#ffeec2'),beamInt:1.45,fill:C('#fff0d8'),fillInt:.12,
-      stars:0,ff:0,shaft:.1},
+      sun:C('#fff3d9'),sunInt:1.2,sunPos:new THREE.Vector3(3,2.5,0).addScaledVector(TRAVEL,-19),
+      beam:C('#ffeec2'),beamInt:.8,fill:C('#fff0d8'),fillInt:.12,
+      stars:0,ff:0,shaft:.07},
     night:{sky:C('#122740'),hemiSky:C('#24405c'),hemiGnd:C('#152436'),hemiInt:.55,
-      sun:C('#a8d8c8'),sunInt:.55,sunPos:new THREE.Vector3(9,4,11),
-      beam:C('#bfe8d8'),beamInt:1.15,fill:C('#ffb478'),fillInt:.42,
-      stars:1,ff:.5,shaft:.16},
+      sun:C('#a8d8c8'),sunInt:.55,sunPos:new THREE.Vector3(3,2.5,0).addScaledVector(TRAVEL,-16),
+      beam:C('#bfe8d8'),beamInt:.6,fill:C('#ffb478'),fillInt:.42,
+      stars:1,ff:.5,shaft:.11},
   },
 };
 function mixPalette(out,A,B,t){
@@ -1146,7 +1150,7 @@ function applyVisuals(){
   beam.color.copy(L.beam);
   beam.intensity=curtainOpen*L.beamInt;
   shaftMat.color.copy(L.beam);shaftMat.opacity=curtainOpen*L.shaft;
-  dust.mat.opacity=curtainOpen*.5;
+  dust.mat.opacity=curtainOpen*.38;
   /* ── 季节模型 ── */
   const S=curSV;
   M.ground.color.copy(S.ground);
@@ -1194,7 +1198,7 @@ function resetInteractables(){
   bookStored=false;
   bookGroup.visible=true;
   bookGroup.scale.setScalar(1);
-  bookGroup.position.set(.52,2.95,1.462);
+  bookGroup.position.set(.52,2.95,1.112);
   bookGroup.rotation.set(0,0,.35);
   pageL.rotation.y=.26;pageR.rotation.y=-.26;
   scatterPens();
@@ -1211,17 +1215,20 @@ function collectPen(pen){
   if(pen.userData.stored)return;
   pen.userData.stored=true;
   Audio.blip();
-  const p0=pen.position.clone(),p1=new THREE.Vector3(.32,3.62,1.72);
-  const ctrl=p0.clone().lerp(p1,.5);ctrl.z+=.4;
-  const ry0=pen.rotation.y;
+  const p0=pen.position.clone();
+  /* 终点：笔筒内立着（笔身竖直，微微斜靠，上端露出筒口） */
+  const fx=.32+rand(-.035,.035),fy=3.62+rand(-.035,.035);
+  const p1=new THREE.Vector3(fx,fy,1.31);
+  const ctrl=p0.clone().lerp(p1,.5);ctrl.z+=.42;
+  const r0=pen.rotation.clone();
+  const rx1=rand(-.12,.12),ry1=-Math.PI/2+rand(-.25,.25);
   tween({dur:750,ease:easeInOutCubic,owner:pen,
     update:k=>{
       const a=p0.clone().lerp(ctrl,k),b=ctrl.clone().lerp(p1,k);
       pen.position.copy(a.lerp(b,k));
-      pen.scale.setScalar(1-k*.8);
-      pen.rotation.y=ry0+k*2.5;
-    },
-    done:()=>{pen.visible=false;}});
+      pen.scale.setScalar(lerp(1,.8,k));
+      pen.rotation.set(lerp(r0.x,rx1,k),lerp(r0.y,ry1,k),lerp(r0.z,0,k));
+    }});
   showToast('笔收进了笔筒 ✏️');
 }
 function storeBook(){
@@ -1229,7 +1236,7 @@ function storeBook(){
   bookStored=true;
   Audio.blip();
   const p0=bookGroup.position.clone();
-  const p1=new THREE.Vector3(.3,4.06,1.86);
+  const p1=new THREE.Vector3(.3,4.06,1.495);
   const ctrl=p0.clone().lerp(p1,.5);ctrl.z+=.55;
   const rz0=bookGroup.rotation.z;
   tween({dur:1100,ease:easeInOutCubic,owner:'book',
@@ -1302,6 +1309,9 @@ canvas.addEventListener('pointerup',e=>{
         Audio.blip();setChair(CHAIR_STRAIGHT);showToast('椅子扶正了 🪑');
       }
       else if(kind==='book')storeBook();
+      else if(kind==='pen'){
+        const pen=pens.find(pp=>pp===hit);pen&&collectPen(pen);
+      }
       else if(kind==='poster'){
         const p=posters.find(pp=>pp.holder===hit);p&&straightenPoster(p);
       }
